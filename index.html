@@ -38,6 +38,14 @@
         .sub { margin-top: 18px; padding-left: 14px; border-left: 3px solid var(--soft); }
         .sub h3 { font-size: 18px; }
         .content { margin-top: 6px; word-break: break-word; }
+        .content { font-size: 16px; }   /* ← 본문 기본 글자 크기 */
+        .content .t1 { font-size: 1.6em; font-weight: 700; margin: .4em 0 .2em; }
+        .content .t2 { font-size: 1.35em; font-weight: 700; margin: .3em 0 .1em; }
+        .content .t3 { font-size: 1.15em; font-weight: 700; }
+        .content .big { font-size: 1.3em; }
+        .content .small { font-size: .85em; color: var(--muted); }
+        .content .gap { height: .8em; }
+        .content ul { margin: .2em 0; padding-left: 1.4em; }
         .content code { background: #eff1f3; padding: 1px 5px; border-radius: 4px; font-size: 90%; }
         .content a { color: var(--accent); }
         .empty { color: var(--muted); font-style: italic; }
@@ -186,13 +194,30 @@ async function load() {
 function esc(s) {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+function inline(s) {
+    return esc(s)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\+\+(.+?)\+\+/g, '<span class="big">$1</span>')
+        .replace(/--(.+?)--/g, '<span class="small">$1</span>')
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
 function format(text) {
     if (!text) return '<span class="empty">(내용 없음)</span>';
-    return esc(text)
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/`(.+?)`/g, '<code>$1</code>')
-        .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-        .replace(/\n/g, '<br>');
+    let html = '', inList = false;
+    for (const line of text.split('\n')) {
+        const list = line.match(/^\s*- (.*)/);
+        if (list) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(list[1])}</li>`; continue; }
+        if (inList) { html += '</ul>'; inList = false; }
+        let m;
+        if ((m = line.match(/^### (.*)/))) html += `<div class="t3">${inline(m[1])}</div>`;
+        else if ((m = line.match(/^## (.*)/))) html += `<div class="t2">${inline(m[1])}</div>`;
+        else if ((m = line.match(/^# (.*)/))) html += `<div class="t1">${inline(m[1])}</div>`;
+        else if (line.trim() === '') html += '<div class="gap"></div>';   // 빈 줄 = 문단 간격
+        else html += `<div>${inline(line)}</div>`;
+    }
+    if (inList) html += '</ul>';
+    return html;
 }
 
 /* ---------- 찾기 도우미 ---------- */
@@ -223,7 +248,7 @@ function editForm(item, isSection) {
     return `<div class="form">
         <input id="f-title" value="${esc(item.title)}" placeholder="${isSection ? '큰제목' : '작은제목'}">
         <textarea id="f-content" placeholder="내용">${esc(item.content)}</textarea>
-        <div class="hint">서식: **굵게** · \`코드\` · [링크텍스트](https://주소)</div>
+        <div class="hint">줄 앞에: # 아주 크게 · ## 크게 · ### 조금 크게 · - 목록 &nbsp;|&nbsp; 글자: ++크게++ · --작게-- · **굵게** · \`코드\` · [링크](https://주소) &nbsp;|&nbsp; Enter = 줄바꿈, 빈 줄 = 문단 띄우기</div>
         <div class="row">
             <button onclick="cancelEdit()">취소</button>
             <button class="primary" onclick="saveEdit('${item.id}')">저장</button>
