@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peter's Wiki</title>
+    <style>
+        :root {
+            --bg: #f6f7f9; --panel: #ffffff; --text: #1f2328; --muted: #656d76;
+            --line: #d0d7de; --accent: #0969da; --danger: #cf222e; --soft: #eef4fd;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+               background: var(--bg); color: var(--text); line-height: 1.7; }
+        header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 24px;
+                 display: flex; align-items: center; gap: 12px; flex-wrap: wrap; position: sticky; top: 0; z-index: 10; }
+        header h1 { font-size: 20px; margin: 0; flex: 1; }
+        header .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+        .layout { display: flex; max-width: 1200px; margin: 0 auto; gap: 24px; padding: 24px; }
+        nav { width: 240px; flex-shrink: 0; position: sticky; top: 80px; align-self: flex-start;
+              background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px;
+              max-height: calc(100vh - 110px); overflow-y: auto; }
+        nav h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+        nav input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; }
+        nav ol { margin: 0; padding-left: 18px; font-size: 14px; }
+        nav ol ol { padding-left: 16px; font-size: 13px; }
+        nav a { color: var(--text); text-decoration: none; }
+        nav a:hover { color: var(--accent); }
+        main { flex: 1; min-width: 0; }
+        .intro { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px 24px; margin-bottom: 20px; }
+        .intro h2 { margin: 0 0 4px; }
+        .intro p { margin: 0; color: var(--muted); }
+        section.wiki { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+                       padding: 20px 24px; margin-bottom: 20px; }
+        .head { display: flex; align-items: center; gap: 8px; }
+        .head h2, .head h3 { flex: 1; margin: 0; }
+        section.wiki > .head h2 { font-size: 24px; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
+        .sub { margin-top: 18px; padding-left: 14px; border-left: 3px solid var(--soft); }
+        .sub h3 { font-size: 18px; }
+        .content { margin-top: 6px; word-break: break-word; }
+        .content code { background: #eff1f3; padding: 1px 5px; border-radius: 4px; font-size: 90%; }
+        .content a { color: var(--accent); }
+        .empty { color: var(--muted); font-style: italic; }
+        button { font: inherit; font-size: 13px; padding: 5px 10px; border: 1px solid var(--line);
+                 background: var(--panel); border-radius: 6px; cursor: pointer; }
+        button:hover { background: var(--soft); }
+        button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        button.primary:hover { opacity: .9; }
+        button.danger { color: var(--danger); }
+        .actions { display: none; gap: 4px; }
+        body.editing .actions { display: flex; }
+        body.editing .edit-only { display: inline-block; }
+        .edit-only { display: none; }
+        .add-sub { margin-top: 14px; }
+        .add-section { width: 100%; padding: 12px; border-style: dashed; font-size: 15px; }
+        /* 편집 폼 */
+        .form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+        .form input, .form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+                                      border-radius: 6px; font: inherit; }
+        .form textarea { min-height: 140px; resize: vertical; }
+        .form .row { display: flex; gap: 6px; justify-content: flex-end; }
+        .hint { font-size: 12px; color: var(--muted); }
+        @media (max-width: 800px) {
+            .layout { flex-direction: column; padding: 12px; }
+            nav { width: 100%; position: static; max-height: none; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📘 Peter's day message</h1>
+        <div class="tools">
+            <button id="toggleEdit" class="primary">✏️ 편집 모드</button>
+            <button class="edit-only" onclick="exportJSON()">💾 내보내기</button>
+            <button class="edit-only" onclick="document.getElementById('importFile').click()">📂 가져오기</button>
+            <input type="file" id="importFile" accept=".json" hidden>
+        </div>
+    </header>
+
+    <div class="layout">
+        <nav>
+            <h3>목차</h3>
+            <input id="search" type="search" placeholder="검색...">
+            <ol id="toc"></ol>
+        </nav>
+        <main>
+            <div class="intro">
+                <h2>Welcome to My Website</h2>
+                <p>This is a simple website hosted on GitHub Pages.</p>
+            </div>
+            <div id="wiki"></div>
+            <button class="add-section edit-only" onclick="addSection()">＋ 큰제목 추가</button>
+        </main>
+    </div>
+
+<script>
+const STORAGE_KEY = 'my-wiki-data';
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+let data = [];          // [{id, title, content, subs:[{id, title, content}]}]
+let editingId = null;   // 현재 편집 중인 항목 id
+let query = '';
+
+/* ---------- 저장 / 불러오기 ---------- */
+function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+}
+async function load() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) { data = JSON.parse(saved); return; }
+    } catch (e) {}
+    // 저장된 데이터가 없으면 같은 폴더의 wiki.json을 읽음 (GitHub에 올려둔 공개 데이터)
+    try {
+        const res = await fetch('wiki.json', { cache: 'no-store' });
+        if (res.ok) { data = await res.json(); return; }
+    } catch (e) {}
+    data = [{
+        id: uid(), title: '시작하기', content: '이 위키에 오신 것을 환영합니다.\n오른쪽 위 **편집 모드**를 눌러 내용을 추가해 보세요.',
+        subs: [{ id: uid(), title: '사용법', content: '- 큰제목 추가: 페이지 맨 아래 버튼\n- 작은제목 추가: 각 큰제목 아래 버튼\n- 서식: **굵게**, `코드`, [링크](https://github.com)' }]
+    }];
+}
+
+/* ---------- 간단한 서식 변환 ---------- */
+function esc(s) {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function format(text) {
+    if (!text) return '<span class="empty">(내용 없음)</span>';
+    return esc(text)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+        .replace(/\n/g, '<br>');
+}
+
+/* ---------- 찾기 도우미 ---------- */
+function find(id) {
+    for (const s of data) {
+        if (s.id === id) return { item: s, list: data };
+        const sub = s.subs.find(x => x.id === id);
+        if (sub) return { item: sub, list: s.subs, parent: s };
+    }
+    return null;
+}
+function matches(item) {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return (item.title + ' ' + item.content).toLowerCase().includes(q);
+}
+
+/* ---------- 화면 그리기 ---------- */
+function actionButtons(id, isSection) {
+    return `<div class="actions">
+        <button onclick="moveItem('${id}',-1)" title="위로">▲</button>
+        <button onclick="moveItem('${id}',1)" title="아래로">▼</button>
+        <button onclick="startEdit('${id}')">수정</button>
+        <button class="danger" onclick="removeItem('${id}')">삭제</button>
+    </div>`;
+}
+function editForm(item, isSection) {
+    return `<div class="form">
+        <input id="f-title" value="${esc(item.title)}" placeholder="${isSection ? '큰제목' : '작은제목'}">
+        <textarea id="f-content" placeholder="내용">${esc(item.content)}</textarea>
+        <div class="hint">서식: **굵게** · \`코드\` · [링크텍스트](https://주소)</div>
+        <div class="row">
+            <button onclick="cancelEdit()">취소</button>
+            <button class="primary" onclick="saveEdit('${item.id}')">저장</button>
+        </div>
+    </div>`;
+}
+
+function render() {
+    const wiki = document.getElementById('wiki');
+    const toc = document.getElementById('toc');
+    let html = '', tocHtml = '';
+
+    data.forEach((s, i) => {
+        const subsShown = s.subs.filter(matches);
+        if (!matches(s) && subsShown.length === 0) return;
+        const num = i + 1;
+
+        tocHtml += `<li><a href="#${s.id}">${esc(s.title || '(제목 없음)')}</a>`;
+        if (subsShown.length) {
+            tocHtml += '<ol>' + subsShown.map(sub =>
+                `<li><a href="#${sub.id}">${esc(sub.title || '(제목 없음)')}</a></li>`).join('') + '</ol>';
+        }
+        tocHtml += '</li>';
+
+        html += `<section class="wiki" id="${s.id}">`;
+        if (editingId === s.id) {
+            html += editForm(s, true);
+        } else {
+            html += `<div class="head"><h2>${num}. ${esc(s.title || '(제목 없음)')}</h2>${actionButtons(s.id, true)}</div>`;
+            if (s.content) html += `<div class="content">${format(s.content)}</div>`;
+        }
+
+        (query ? subsShown : s.subs).forEach(sub => {
+            const j = s.subs.indexOf(sub) + 1;
+            html += `<div class="sub" id="${sub.id}">`;
+            if (editingId === sub.id) {
+                html += editForm(sub, false);
+            } else {
+                html += `<div class="head"><h3>${num}.${j} ${esc(sub.title || '(제목 없음)')}</h3>${actionButtons(sub.id, false)}</div>
+                         <div class="content">${format(sub.content)}</div>`;
+            }
+            html += '</div>';
+        });
+
+        html += `<button class="add-sub edit-only" onclick="addSub('${s.id}')">＋ 작은제목 추가</button></section>`;
+    });
+
+    wiki.innerHTML = html || '<p class="empty">표시할 내용이 없습니다.</p>';
+    toc.innerHTML = tocHtml;
+
+    const t = document.getElementById('f-title');
+    if (t) t.focus();
+}
+
+/* ---------- 편집 동작 ---------- */
+function addSection() {
+    const s = { id: uid(), title: '', content: '', subs: [] };
+    data.push(s); editingId = s.id; save(); render();
+    document.getElementById(s.id).scrollIntoView({ behavior: 'smooth' });
+}
+function addSub(sectionId) {
+    const s = find(sectionId).item;
+    const sub = { id: uid(), title: '', content: '' };
+    s.subs.push(sub); editingId = sub.id; save(); render();
+    document.getElementById(sub.id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function startEdit(id) { editingId = id; render(); }
+function cancelEdit() {
+    const f = find(editingId);
+    // 새로 만들고 아무것도 입력하지 않은 항목은 취소 시 삭제
+    if (f && !f.item.title && !f.item.content && !(f.item.subs && f.item.subs.length)) {
+        f.list.splice(f.list.indexOf(f.item), 1); save();
+    }
+    editingId = null; render();
+}
+function saveEdit(id) {
+    const f = find(id);
+    f.item.title = document.getElementById('f-title').value.trim();
+    f.item.content = document.getElementById('f-content').value;
+    editingId = null; save(); render();
+}
+function removeItem(id) {
+    const f = find(id);
+    const msg = f.item.subs ? `"${f.item.title}" 큰제목과 그 아래 작은제목을 모두 삭제할까요?` : `"${f.item.title}" 항목을 삭제할까요?`;
+    if (!confirm(msg)) return;
+    f.list.splice(f.list.indexOf(f.item), 1); save(); render();
+}
+function moveItem(id, dir) {
+    const f = find(id);
+    const i = f.list.indexOf(f.item), j = i + dir;
+    if (j < 0 || j >= f.list.length) return;
+    [f.list[i], f.list[j]] = [f.list[j], f.list[i]]; save(); render();
+}
+
+/* ---------- 내보내기 / 가져오기 ---------- */
+function exportJSON() {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'wiki.json'; a.click();
+    URL.revokeObjectURL(a.href);
+}
+document.getElementById('importFile').addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        try {
+            const parsed = JSON.parse(reader.result);
+            if (!Array.isArray(parsed)) throw new Error();
+            data = parsed; save(); render();
+        } catch (err) { alert('올바른 wiki.json 파일이 아닙니다.'); }
+    };
+    reader.readAsText(file); e.target.value = '';
+});
+
+/* ---------- 이벤트 ---------- */
+document.getElementById('toggleEdit').addEventListener('click', e => {
+    const on = document.body.classList.toggle('editing');
+    e.target.textContent = on ? '✅ 편집 완료' : '✏️ 편집 모드';
+    if (!on && editingId) cancelEdit();
+});
+document.getElementById('search').addEventListener('input', e => { query = e.target.value.trim(); render(); });
+document.addEventListener('keydown', e => {
+    if (!editingId) return;
+    if (e.key === 'Escape') cancelEdit();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEdit(editingId);
+});
+
+load().then(render);
+</script>
+</body>
+</html>

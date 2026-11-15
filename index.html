@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Peter's Wiki</title>
+    <title>My GitHub Wiki</title>
     <style>
         :root {
             --bg: #f6f7f9; --panel: #ffffff; --text: #1f2328; --muted: #656d76;
@@ -60,6 +60,15 @@
         .form textarea { min-height: 140px; resize: vertical; }
         .form .row { display: flex; gap: 6px; justify-content: flex-end; }
         .hint { font-size: 12px; color: var(--muted); }
+        #status { align-self: center; }
+        #status.dirty { color: #9a6700; }
+        /* 설정 창 */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none;
+                 align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+        .modal.open { display: flex; }
+        .modal .box { background: var(--panel); border-radius: 10px; padding: 22px; width: 100%; max-width: 440px; }
+        .modal h3 { margin: 0 0 10px; }
+        .modal label { font-size: 13px; font-weight: 600; }
         @media (max-width: 800px) {
             .layout { flex-direction: column; padding: 12px; }
             nav { width: 100%; position: static; max-height: none; }
@@ -68,9 +77,12 @@
 </head>
 <body>
     <header>
-        <h1>📘 Peter's day message</h1>
+        <h1>📘 My GitHub Wiki</h1>
         <div class="tools">
+            <span id="status" class="hint"></span>
             <button id="toggleEdit" class="primary">✏️ 편집 모드</button>
+            <button class="edit-only primary" onclick="saveToGitHub()">☁️ GitHub에 저장</button>
+            <button class="edit-only" onclick="openSettings()">⚙️ 설정</button>
             <button class="edit-only" onclick="exportJSON()">💾 내보내기</button>
             <button class="edit-only" onclick="document.getElementById('importFile').click()">📂 가져오기</button>
             <input type="file" id="importFile" accept=".json" hidden>
@@ -93,6 +105,27 @@
         </main>
     </div>
 
+    <div class="modal" id="settings">
+        <div class="box">
+            <h3>⚙️ GitHub 저장 설정</h3>
+            <div class="form">
+                <label>사용자 이름 (owner)</label>
+                <input id="s-owner" placeholder="예: peteroh">
+                <label>저장소 이름 (repo)</label>
+                <input id="s-repo" placeholder="예: peteroh.github.io">
+                <label>브랜치</label>
+                <input id="s-branch" placeholder="main">
+                <label>Personal Access Token</label>
+                <input id="s-token" type="password" placeholder="github_pat_...">
+                <div class="hint">토큰은 이 브라우저에만 저장되고, 저장소나 페이지 파일에는 들어가지 않습니다.</div>
+                <div class="row">
+                    <button onclick="closeSettings()">닫기</button>
+                    <button class="primary" onclick="saveSettings()">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 <script>
 const STORAGE_KEY = 'my-wiki-data';
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -101,18 +134,46 @@ let data = [];          // [{id, title, content, subs:[{id, title, content}]}]
 let editingId = null;   // 현재 편집 중인 항목 id
 let query = '';
 
+const SETTINGS_KEY = 'my-wiki-github';
+const DIRTY_KEY = 'my-wiki-dirty';
+
+/* ---------- 상태 표시 ---------- */
+function setStatus(text, dirty) {
+    const el = document.getElementById('status');
+    el.textContent = text; el.className = 'hint' + (dirty ? ' dirty' : '');
+}
+function isDirty() { try { return localStorage.getItem(DIRTY_KEY) === '1'; } catch (e) { return false; } }
+
 /* ---------- 저장 / 불러오기 ---------- */
+// 편집할 때마다 브라우저에 임시 저장 (GitHub에 저장하기 전까지 '저장 안 됨' 상태)
 function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem(DIRTY_KEY, '1');
+    } catch (e) {}
+    setStatus('● GitHub에 저장 안 됨', true);
 }
 async function load() {
+    // 1) GitHub에 아직 저장하지 않은 편집본이 있으면 그것을 먼저 보여줌
+    if (isDirty()) {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) { data = JSON.parse(saved); setStatus('● GitHub에 저장 안 됨', true); return; }
+        } catch (e) {}
+    }
+    // 2) 설정이 있으면(관리자) GitHub에서 최신본을 바로 읽음 — 배포 대기 없이 최신 내용
+    const s = getSettings();
+    if (s.token) {
+        try {
+            const res = await fetch(apiUrl(s) + '?ref=' + encodeURIComponent(s.branch) + '&t=' + Date.now(), {
+                headers: { Authorization: 'Bearer ' + s.token, Accept: 'application/vnd.github.raw+json' }
+            });
+            if (res.ok) { data = await res.json(); return; }
+        } catch (e) {}
+    }
+    // 3) 방문자: 사이트에 올라간 wiki.json을 읽음
     try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) { data = JSON.parse(saved); return; }
-    } catch (e) {}
-    // 저장된 데이터가 없으면 같은 폴더의 wiki.json을 읽음 (GitHub에 올려둔 공개 데이터)
-    try {
-        const res = await fetch('wiki.json', { cache: 'no-store' });
+        const res = await fetch('wiki.json?t=' + Date.now(), { cache: 'no-store' });
         if (res.ok) { data = await res.json(); return; }
     } catch (e) {}
     data = [{
@@ -257,6 +318,72 @@ function moveItem(id, dir) {
     [f.list[i], f.list[j]] = [f.list[j], f.list[i]]; save(); render();
 }
 
+/* ---------- GitHub 저장 ---------- */
+function getSettings() {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (e) { return {}; }
+}
+function apiUrl(s) {
+    return `https://api.github.com/repos/${encodeURIComponent(s.owner)}/${encodeURIComponent(s.repo)}/contents/wiki.json`;
+}
+function openSettings() {
+    const s = getSettings();
+    document.getElementById('s-owner').value = s.owner || '';
+    document.getElementById('s-repo').value = s.repo || '';
+    document.getElementById('s-branch').value = s.branch || 'main';
+    document.getElementById('s-token').value = s.token || '';
+    document.getElementById('settings').classList.add('open');
+}
+function closeSettings() { document.getElementById('settings').classList.remove('open'); }
+function saveSettings() {
+    const s = {
+        owner: document.getElementById('s-owner').value.trim(),
+        repo: document.getElementById('s-repo').value.trim(),
+        branch: document.getElementById('s-branch').value.trim() || 'main',
+        token: document.getElementById('s-token').value.trim()
+    };
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+    closeSettings();
+}
+function toBase64(str) {   // 한글이 깨지지 않도록 UTF-8로 인코딩
+    const bytes = new TextEncoder().encode(str);
+    let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin);
+}
+async function saveToGitHub() {
+    if (editingId) { alert('편집 중인 항목을 먼저 저장하거나 취소해 주세요.'); return; }
+    const s = getSettings();
+    if (!s.owner || !s.repo || !s.token) { openSettings(); return; }
+    const headers = { Authorization: 'Bearer ' + s.token, Accept: 'application/vnd.github+json' };
+    setStatus('저장 중...', false);
+    try {
+        // 기존 파일이 있으면 sha가 필요함
+        let sha;
+        const cur = await fetch(apiUrl(s) + '?ref=' + encodeURIComponent(s.branch) + '&t=' + Date.now(), { headers });
+        if (cur.ok) sha = (await cur.json()).sha;
+        else if (cur.status !== 404) throw new Error(cur.status === 401 ? '토큰이 올바르지 않습니다.' : '저장소 정보를 확인해 주세요. (' + cur.status + ')');
+
+        const res = await fetch(apiUrl(s), {
+            method: 'PUT', headers,
+            body: JSON.stringify({
+                message: 'Update wiki ' + new Date().toLocaleString('ko-KR'),
+                content: toBase64(JSON.stringify(data, null, 2)),
+                branch: s.branch, ...(sha ? { sha } : {})
+            })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(res.status === 403 || res.status === 404
+                ? '토큰에 이 저장소의 Contents 쓰기 권한이 있는지 확인해 주세요.'
+                : (err.message || res.status));
+        }
+        try { localStorage.setItem(DIRTY_KEY, '0'); } catch (e) {}
+        setStatus('✓ 저장됨 (사이트 반영까지 1~2분)', false);
+    } catch (e) {
+        setStatus('● GitHub에 저장 안 됨', true);
+        alert('저장 실패: ' + e.message);
+    }
+}
+
 /* ---------- 내보내기 / 가져오기 ---------- */
 function exportJSON() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -289,6 +416,9 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') cancelEdit();
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEdit(editingId);
 });
+
+// GitHub에 저장하지 않은 채 페이지를 닫으려 하면 경고
+window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
 load().then(render);
 </script>
