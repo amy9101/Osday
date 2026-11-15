@@ -56,6 +56,16 @@
         "id": "5yxu804p",
         "title": "9.1 작은 내용 제목 # 큰글씨",
         "content": "# 글자 1\n## 글자 2\n### 글자 3"
+      },
+      {
+        "id": "s2en53xl",
+        "title": "작은 글자 2",
+        "content": "++크게++\n--작게--\n'코드'\n[링크] https://amy9101.github.io/Osday/\n# 링크 큰 글자"
+      },
+      {
+        "id": "x5whki4z",
+        "title": "작은 제목3",
+        "content": "## 조금크게 ++크게++ --작게-- **굵게** [링크] (https://amy9101.github.io/Osday/)"
       }
     ]
   }
