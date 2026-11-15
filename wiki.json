@@ -27,6 +27,24 @@
     "id": "wg7l4pev",
     "title": "5.1 큰제목",
     "content": "큰제목 추가",
-    "subs": []
+    "subs": [
+      {
+        "id": "aacgb7wr",
+        "title": "7.1 냉무",
+        "content": "내용"
+      }
+    ]
+  },
+  {
+    "id": "ede657vz",
+    "title": "",
+    "content": "",
+    "subs": [
+      {
+        "id": "7305bced",
+        "title": "8.1 작은제목",
+        "content": ""
+      }
+    ]
   }
 ]
